@@ -1,13 +1,21 @@
 name: Run Attendance Script
 
 on:
-  workflow_dispatch:  # Manual run button
+  workflow_dispatch:
   schedule:
-    - cron: '14 14 * * 1-5'  # Weekdays at 10:00 AM Eastern (14:00 UTC)
+    - cron: '14 14 * * 1-5'
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
+
+    # ← Add this block:
+    env:
+      AZURE_CLIENT_ID:     ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
+      SHAREPOINT_SITE_ID:  ${{ secrets.SHAREPOINT_SITE_ID }}
+      DRIVE_ID:            ${{ secrets.DRIVE_ID }}
 
     steps:
       - name: Checkout repository
