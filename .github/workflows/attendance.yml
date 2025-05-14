@@ -9,7 +9,7 @@ jobs:
   run-script:
     runs-on: ubuntu-latest
 
-    # ← Add this block:
+    # <<< Add this block to pull in your secrets! >>>
     env:
       AZURE_CLIENT_ID:     ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
