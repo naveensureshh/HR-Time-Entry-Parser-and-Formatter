@@ -1,0 +1,27 @@
+name: Run Attendance Script
+
+on:
+  workflow_dispatch:  # Manual run button
+  schedule:
+    - cron: '14 14 * * 1-5'  # Weekdays at 9:00 AM UTC
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run attendance script
+        run: python attendance_script.py
