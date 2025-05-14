@@ -1,10 +1,10 @@
+import os
 import pandas as pd
-from pathlib import Path
 from datetime import datetime
-from openpyxl import load_workbook
+from io import BytesIO
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
-from io import BytesIO
+from graph_utils import download_file, upload_file  # Uses Graph API helpers
 
 def parse_scheduled_start(scheduled: str):
     if not scheduled or scheduled.lower() in ('off', ''):
@@ -16,8 +16,9 @@ def parse_scheduled_start(scheduled: str):
     except ValueError:
         return None
 
-def load_timesheet(path: Path, dt_format: str) -> pd.DataFrame:
-    df = pd.read_csv(path)
+
+def load_timesheet(stream: BytesIO, dt_format: str) -> pd.DataFrame:
+    df = pd.read_csv(stream)
     df.columns = df.columns.str.strip()
     drop_cols = [c for c in df.columns if c.lower().startswith(('legend', 'unnamed'))]
     df = df.drop(columns=drop_cols, errors='ignore')
@@ -33,6 +34,7 @@ def load_timesheet(path: Path, dt_format: str) -> pd.DataFrame:
     df['Date'] = df['Clock-in Time'].dt.date
     return df
 
+
 def normalize_schedule(schedule_df: pd.DataFrame) -> pd.DataFrame:
     sched = schedule_df.copy()
     sched.columns = sched.columns.str.strip()
@@ -44,6 +46,7 @@ def normalize_schedule(schedule_df: pd.DataFrame) -> pd.DataFrame:
         .str.lower()
     )
     return sched
+
 
 def analyze_attendance(schedule_df: pd.DataFrame,
                        timesheet_df: pd.DataFrame,
@@ -76,8 +79,7 @@ def analyze_attendance(schedule_df: pd.DataFrame,
         rows.append((orig, norm, status, sched_str, clk, target))
         seen.add(norm)
 
-    sched_names = set(sched['NameClean'])
-    extras = set(ts_today['NameClean']) - sched_names
+    extras = set(ts_today['NameClean']) - set(sched['NameClean'])
     for extra in sorted(extras):
         if extra in seen:
             continue
@@ -94,6 +96,7 @@ def analyze_attendance(schedule_df: pd.DataFrame,
     df_out['Employee Name'] = df_out['Employee Name'].str.title()
     return df_out.sort_values(['Status', 'Employee Name']).reset_index(drop=True)
 
+
 def create_summary_excel_in_memory(df: pd.DataFrame) -> BytesIO:
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -109,24 +112,28 @@ def create_summary_excel_in_memory(df: pd.DataFrame) -> BytesIO:
     buffer.seek(0)
     return buffer
 
-def main():
-    schedule_file = Path("cleaned_dataset.csv")
-    timesheet_file = Path("timesheet.csv")
-    datetime_format = "%m/%d/%Y %I:%M %p"
 
-    schedule_df = pd.read_csv(schedule_file)
-    timesheet_df = load_timesheet(timesheet_file, datetime_format)
+def main():
+    # Download inputs from SharePoint
+    schedule_stream = download_file("cleaned_dataset.csv")
+    timesheet_stream = download_file("timesheet.csv")
+
+    # Load and process data
+    schedule_df = pd.read_csv(schedule_stream)
+    timesheet_df = load_timesheet(timesheet_stream, "%m/%d/%Y %I:%M %p")
 
     dates = timesheet_df['Date'].dropna().unique()
     if len(dates) != 1:
         raise ValueError(f"Expected 1 date in timesheet, found: {dates}")
     target = dates[0]
 
-    summary = analyze_attendance(schedule_df, timesheet_df, target)
-    summary_stream = create_summary_excel_in_memory(summary)
+    summary_df = analyze_attendance(schedule_df, timesheet_df, target)
+    excel_stream = create_summary_excel_in_memory(summary_df)
 
-    # Placeholder for Graph upload
-    print(f"✅ Summary generated in memory for {target} ({len(summary)} records)")
+    # Upload summary back to SharePoint
+    out_filename = f"attendance_summary_{target}.xlsx"
+    upload_file(excel_stream, out_filename)
+
 
 if __name__ == "__main__":
     main()
