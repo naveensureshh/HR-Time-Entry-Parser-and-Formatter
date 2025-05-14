@@ -3,7 +3,7 @@ name: Run Attendance Script
 on:
   workflow_dispatch:  # Manual run button
   schedule:
-    - cron: '14 14 * * 1-5'  # Weekdays at 9:00 AM UTC
+    - cron: '14 14 * * 1-5'  # Weekdays at 10:00 AM Eastern (14:00 UTC)
 
 jobs:
   run-script:
@@ -24,4 +24,5 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run attendance script
+        working-directory: ${{ github.workspace }}
         run: python attendance_script.py
