@@ -3,9 +3,9 @@ import requests
 from io import BytesIO
 
 # SharePoint / Graph setup
-TENANT_ID = os.environ['TENANT_ID']
-CLIENT_ID = os.environ['CLIENT_ID']
-CLIENT_SECRET = os.environ['CLIENT_SECRET']
+TENANT_ID = os.environ['AZURE_TENANT_ID']
+CLIENT_ID = os.environ['AZURE_CLIENT_ID']
+CLIENT_SECRET = os.environ['AZURE_CLIENT_SECRET']
 SITE_NAME = "BlackmorePartnersNewTimesheet"
 SITE_DOMAIN = "blackmorepartners1llc.sharepoint.com"
 UPLOAD_FOLDER_ID = "EjZURqqe4-BPvvj6MuMhWUgBlDddKimBWDF89R86Mx2GRQ"
