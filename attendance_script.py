@@ -43,14 +43,26 @@ def list_files_in_folder(folder_id, token, site_id):
     return r.json().get('value', [])
 
 
-def download_file(filename):
+def download_file(latest_csv_only=True, match_name=None):
     token = get_access_token()
     site_id = get_site_id(token)
     files = list_files_in_folder(DOWNLOAD_FOLDER_ID, token, site_id)
 
-    file_meta = next((f for f in files if f['name'].lower() == filename.lower()), None)
+    csv_files = [
+        f for f in files
+        if f['name'].lower().endswith('.csv')
+    ]
+
+    if match_name:
+        file_meta = next((f for f in csv_files if f['name'].lower() == match_name.lower()), None)
+    elif latest_csv_only:
+        csv_files.sort(key=lambda f: f.get('lastModifiedDateTime', ''), reverse=True)
+        file_meta = csv_files[0] if csv_files else None
+    else:
+        raise ValueError("You must specify match_name or set latest_csv_only=True")
+
     if not file_meta:
-        raise FileNotFoundError(f"{filename} not found in folder.")
+        raise FileNotFoundError("No suitable CSV file found in SharePoint folder.")
 
     download_url = file_meta['@microsoft.graph.downloadUrl']
     r = requests.get(download_url)
