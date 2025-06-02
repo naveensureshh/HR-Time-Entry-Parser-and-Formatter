@@ -3,9 +3,9 @@ import requests
 from io import BytesIO
 
 # SharePoint / Graph setup
-TENANT_ID = os.environ['AZURE_TENANT_ID']
-CLIENT_ID = os.environ['AZURE_CLIENT_ID']
-CLIENT_SECRET = os.environ['AZURE_CLIENT_SECRET']
+TENANT_ID = os.environ['TENANT_ID']
+CLIENT_ID = os.environ['CLIENT_ID']
+CLIENT_SECRET = os.environ['CLIENT_SECRET']
 SITE_NAME = "BlackmorePartnersNewTimesheet"
 SITE_DOMAIN = "blackmorepartners1llc.sharepoint.com"
 UPLOAD_FOLDER_ID = "EjZURqqe4-BPvvj6MuMhWUgBlDddKimBWDF89R86Mx2GRQ"
@@ -43,7 +43,7 @@ def list_files_in_folder(folder_id, token, site_id):
     return r.json().get('value', [])
 
 
-def download_file(latest_csv_only=True, match_name=None):
+def download_file(latest_csv_only=False, match_name=None):
     token = get_access_token()
     site_id = get_site_id(token)
     files = list_files_in_folder(DOWNLOAD_FOLDER_ID, token, site_id)
@@ -81,4 +81,4 @@ def upload_file(file_stream, filename):
     }
     r = requests.put(upload_url, headers=headers, data=file_stream.getvalue())
     r.raise_for_status()
-    return r.json()/ break down whtas said in this code 
+    return r.json()
