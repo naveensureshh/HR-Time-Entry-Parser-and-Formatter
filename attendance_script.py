@@ -1,145 +1,84 @@
-
 import os
-import pandas as pd
-from datetime import datetime
+import requests
 from io import BytesIO
-from openpyxl.styles import Font, Alignment
-from openpyxl.utils import get_column_letter
-from graph_utils import download_file, upload_file  # Uses Graph API helpers
 
-def parse_scheduled_start(scheduled: str):
-    if not scheduled or scheduled.lower() in ('off', ''):
-        return None
-    start_str = scheduled.split('-')[0].strip()
-    fmt = "%I%p" if ':' not in start_str else "%I:%M%p"
-    try:
-        return datetime.strptime(start_str, fmt).time()
-    except ValueError:
-        return None
+# SharePoint / Graph setup
+TENANT_ID = os.environ['AZURE_TENANT_ID']
+CLIENT_ID = os.environ['AZURE_CLIENT_ID']
+CLIENT_SECRET = os.environ['AZURE_CLIENT_SECRET']
+SITE_NAME = "BlackmorePartnersNewTimesheet"
+SITE_DOMAIN = "blackmorepartners1llc.sharepoint.com"
+UPLOAD_FOLDER_ID = "EjZURqqe4-BPvvj6MuMhWUgBlDddKimBWDF89R86Mx2GRQ"
+DOWNLOAD_FOLDER_ID = "EjQWPalnOsBMuZgFR49_rzIB6lTKh-1t3HE7akkQs--AVA"
 
-def load_timesheet(stream: BytesIO, dt_format: str) -> pd.DataFrame:
-    df = pd.read_csv(stream)
-    df.columns = df.columns.str.strip()
-    drop_cols = [c for c in df.columns if c.lower().startswith(('legend', 'unnamed'))]
-    df = df.drop(columns=drop_cols, errors='ignore')
-    df['Employee Name'] = df['Employee Name'].astype(str).str.strip()
-    df['NameClean'] = (
-        df['Employee Name']
-        .str.replace(r'\s*\(.*?\)', '', regex=True)
-        .str.replace(r'\s+', ' ', regex=True)
-        .str.strip()
-        .str.lower()
-    )
-    df['Clock-in Time'] = pd.to_datetime(df['Clock-in Time'], format=dt_format, errors='coerce')
-    df['Date'] = df['Clock-in Time'].dt.date
-    print("🔍 Timesheet data preview:")
-    print(df.head())
-    return df
+GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
-def normalize_schedule(schedule_df: pd.DataFrame) -> pd.DataFrame:
-    sched = schedule_df.copy()
-    sched.columns = sched.columns.str.strip()
-    sched['NameClean'] = (
-        sched['Name'].astype(str)
-        .str.replace(r'\s*\(.*?\)', '', regex=True)
-        .str.replace(r'\s+', ' ', regex=True)
-        .str.strip()
-        .str.lower()
-    )
-    return sched
 
-def analyze_attendance(schedule_df: pd.DataFrame,
-                       timesheet_df: pd.DataFrame,
-                       target_date) -> pd.DataFrame:
-    target = pd.to_datetime(target_date).date()
-    sched = normalize_schedule(schedule_df)
-    ts = timesheet_df.copy()
-    ts_today = ts[ts['Date'] == target]
-    grouped = ts_today.groupby('NameClean')
-    weekday = target.strftime('%A')
+def get_access_token():
+    url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+    data = {
+        'client_id': CLIENT_ID,
+        'scope': 'https://graph.microsoft.com/.default',
+        'client_secret': CLIENT_SECRET,
+        'grant_type': 'client_credentials'
+    }
+    r = requests.post(url, data=data)
+    r.raise_for_status()
+    return r.json()['access_token']
 
-    rows = []
-    seen = set()
 
-    for _, r in sched.iterrows():
-        orig = r['Name']
-        norm = r['NameClean']
-        sched_str = str(r.get(weekday, '')).strip()
-        if not sched_str or sched_str.lower() == 'off':
-            status, clk = 'Not Scheduled', ''
-        else:
-            start_time = parse_scheduled_start(sched_str)
-            if norm in grouped.groups:
-                first_in = grouped.get_group(norm)['Clock-in Time'].min().time()
-                late = start_time and first_in > start_time
-                status = 'Late Clock-in' if late else 'Present'
-                clk = first_in.strftime('%I:%M %p')
-            else:
-                status, clk = 'Absent', ''
-        rows.append((orig, norm, status, sched_str, clk, target))
-        seen.add(norm)
+def get_site_id(token):
+    url = f"{GRAPH_BASE}/sites/{SITE_DOMAIN}:/sites/{SITE_NAME}"
+    headers = {'Authorization': f'Bearer {token}'}
+    r = requests.get(url, headers=headers)
+    r.raise_for_status()
+    return r.json()['id']
 
-    extras = set(ts_today['NameClean']) - set(sched['NameClean'])
-    for extra in sorted(extras):
-        if extra in seen:
-            continue
-        group = grouped.get_group(extra)
-        orig = group['Employee Name'].iloc[0]
-        time_in = group['Clock-in Time'].min().time()
-        rows.append((orig, extra, 'Present (No Schedule)', '', time_in.strftime('%I:%M %p'), target))
 
-    df_out = pd.DataFrame(rows, columns=[
-        'Employee Name', 'NameClean', 'Status', 'Scheduled', 'Clock-in', 'Date'
-    ])
-    df_out = df_out.drop_duplicates(subset=['NameClean'], keep='first')
-    df_out = df_out.drop(columns='NameClean')
-    df_out['Employee Name'] = df_out['Employee Name'].str.title()
-    print("📊 Attendance summary preview:")
-    print(df_out.head())
-    return df_out.sort_values(['Status', 'Employee Name']).reset_index(drop=True)
+def list_files_in_folder(folder_id, token, site_id):
+    url = f"{GRAPH_BASE}/sites/{site_id}/drive/items/{folder_id}/children"
+    headers = {'Authorization': f'Bearer {token}'}
+    r = requests.get(url, headers=headers)
+    r.raise_for_status()
+    return r.json().get('value', [])
 
-def create_summary_excel_in_memory(df: pd.DataFrame) -> BytesIO:
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False)
-        ws = writer.book.active
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
-            cell.alignment = Alignment(horizontal='center')
-        for col in ws.columns:
-            max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = max_len + 2
-        ws.freeze_panes = 'A2'
-    buffer.seek(0)
-    return buffer
 
-def main():
-    print("🚀 Starting HR attendance automation...")
+def download_file(latest_csv_only=True, match_name=None):
+    token = get_access_token()
+    site_id = get_site_id(token)
+    files = list_files_in_folder(DOWNLOAD_FOLDER_ID, token, site_id)
 
-    # Download inputs from SharePoint
-    print("⬇️ Downloading reference schedule...")
-    schedule_stream = download_file(match_name="timesheet.csv")
+    csv_files = [
+        f for f in files
+        if f['name'].lower().endswith('.csv')
+    ]
 
-    print("⬇️ Downloading latest timesheet...")
-    timesheet_stream = download_file(latest_csv_only=True)
+    if match_name:
+        file_meta = next((f for f in csv_files if f['name'].lower() == match_name.lower()), None)
+    elif latest_csv_only:
+        csv_files.sort(key=lambda f: f.get('lastModifiedDateTime', ''), reverse=True)
+        file_meta = csv_files[0] if csv_files else None
+    else:
+        raise ValueError("You must specify match_name or set latest_csv_only=True")
 
-    # Load and process data
-    schedule_df = pd.read_csv(schedule_stream)
-    timesheet_df = load_timesheet(timesheet_stream, "%m/%d/%Y %I:%M %p")
+    if not file_meta:
+        raise FileNotFoundError("No suitable CSV file found in SharePoint folder.")
 
-    dates = timesheet_df['Date'].dropna().unique()
-    if len(dates) != 1:
-        raise ValueError(f"Expected 1 date in timesheet, found: {dates}")
-    target = dates[0]
+    download_url = file_meta['@microsoft.graph.downloadUrl']
+    r = requests.get(download_url)
+    r.raise_for_status()
+    return BytesIO(r.content)
 
-    summary_df = analyze_attendance(schedule_df, timesheet_df, target)
-    excel_stream = create_summary_excel_in_memory(summary_df)
 
-    # Upload summary back to SharePoint
-    out_filename = f"attendance_summary_{target}.xlsx"
-    print(f"⬆️ Uploading summary: {out_filename}")
-    result = upload_file(excel_stream, out_filename)
-    print(f"✅ Uploaded to SharePoint: {result.get('webUrl')}")
+def upload_file(file_stream, filename):
+    token = get_access_token()
+    site_id = get_site_id(token)
 
-if __name__ == "__main__":
-    main()
+    upload_url = f"{GRAPH_BASE}/sites/{site_id}/drive/items/{UPLOAD_FOLDER_ID}:/{filename}:/content"
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }
+    r = requests.put(upload_url, headers=headers, data=file_stream.getvalue())
+    r.raise_for_status()
+    return r.json()/ break down whtas said in this code 
