@@ -43,7 +43,7 @@ def list_files_in_folder(folder_id, token, site_id):
     return r.json().get('value', [])
 
 
-def download_file(latest_csv_only=False, match_name=None):
+def download_file(latest_csv_only=True, match_name=None):
     token = get_access_token()
     site_id = get_site_id(token)
     files = list_files_in_folder(DOWNLOAD_FOLDER_ID, token, site_id)
