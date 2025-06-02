@@ -118,7 +118,7 @@ def main():
 
     # Download inputs from SharePoint
     print("⬇️ Downloading reference schedule...")
-    schedule_stream = download_file(match_name="cleaned_dataset.csv")
+    schedule_stream = download_file(match_name="timesheet.csv")
 
     print("⬇️ Downloading latest timesheet...")
     timesheet_stream = download_file(latest_csv_only=True)
