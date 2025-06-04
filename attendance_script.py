@@ -1,84 +1,75 @@
 import os
 import requests
-from io import BytesIO
+import time
+from datetime import datetime
+from dotenv import load_dotenv
 
-# SharePoint / Graph setup
-TENANT_ID = os.environ['TENANT_ID']
-CLIENT_ID = os.environ['CLIENT_ID']
-CLIENT_SECRET = os.environ['CLIENT_SECRET']
-SITE_NAME = "BlackmorePartnersNewTimesheet"
-SITE_DOMAIN = "blackmorepartners1llc.sharepoint.com"
-UPLOAD_FOLDER_ID = "EjZURqqe4-BPvvj6MuMhWUgBlDddKimBWDF89R86Mx2GRQ"
-DOWNLOAD_FOLDER_ID = "EjQWPalnOsBMuZgFR49_rzIB6lTKh-1t3HE7akkQs--AVA"
+load_dotenv()
 
-GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-
+TENANT_ID = os.getenv("TENANT_ID")
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+SITE_ID = os.getenv("SITE_ID")
+DRIVE_ID = os.getenv("DRIVE_ID")
+OUTPUT_FOLDER_ID = os.getenv("OUTPUT_FOLDER_ID")
 
 def get_access_token():
     url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
     data = {
-        'client_id': CLIENT_ID,
-        'scope': 'https://graph.microsoft.com/.default',
-        'client_secret': CLIENT_SECRET,
-        'grant_type': 'client_credentials'
+        "grant_type": "client_credentials",
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "scope": "https://graph.microsoft.com/.default"
     }
-    r = requests.post(url, data=data)
-    r.raise_for_status()
-    return r.json()['access_token']
+    response = requests.post(url, data=data)
+    response.raise_for_status()
+    return response.json()["access_token"]
 
+def list_recent_csv_file(token):
+    url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/root/search(q='.csv')"
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    items = response.json().get("value", [])
+    if not items:
+        print("No .csv files found.")
+        return None
+    items.sort(key=lambda x: x.get("lastModifiedDateTime", ""), reverse=True)
+    return items[0]
 
-def get_site_id(token):
-    url = f"{GRAPH_BASE}/sites/{SITE_DOMAIN}:/sites/{SITE_NAME}"
-    headers = {'Authorization': f'Bearer {token}'}
-    r = requests.get(url, headers=headers)
-    r.raise_for_status()
-    return r.json()['id']
+def download_file(item, token):
+    download_url = item["@microsoft.graph.downloadUrl"]
+    filename = item["name"]
+    response = requests.get(download_url)
+    with open(filename, "wb") as f:
+        f.write(response.content)
+    print(f"Downloaded: {filename}")
+    return filename
 
+def process_csv(input_filename):
+    output_filename = f"processed_{input_filename}"
+    with open(input_filename, "r") as infile, open(output_filename, "w") as outfile:
+        for line in infile:
+            outfile.write(line)  # placeholder for real processing
+    print(f"Processed file saved as: {output_filename}")
+    return output_filename
 
-def list_files_in_folder(folder_id, token, site_id):
-    url = f"{GRAPH_BASE}/sites/{site_id}/drive/items/{folder_id}/children"
-    headers = {'Authorization': f'Bearer {token}'}
-    r = requests.get(url, headers=headers)
-    r.raise_for_status()
-    return r.json().get('value', [])
-
-
-def download_file(latest_csv_only=True, match_name=None):
-    token = get_access_token()
-    site_id = get_site_id(token)
-    files = list_files_in_folder(DOWNLOAD_FOLDER_ID, token, site_id)
-
-    csv_files = [
-        f for f in files
-        if f['name'].lower().endswith('.csv')
-    ]
-
-    if match_name:
-        file_meta = next((f for f in csv_files if f['name'].lower() == match_name.lower()), None)
-    elif latest_csv_only:
-        csv_files.sort(key=lambda f: f.get('lastModifiedDateTime', ''), reverse=True)
-        file_meta = csv_files[0] if csv_files else None
-    else:
-        raise ValueError("You must specify match_name or set latest_csv_only=True")
-
-    if not file_meta:
-        raise FileNotFoundError("No suitable CSV file found in SharePoint folder.")
-
-    download_url = file_meta['@microsoft.graph.downloadUrl']
-    r = requests.get(download_url)
-    r.raise_for_status()
-    return BytesIO(r.content)
-
-
-def upload_file(file_stream, filename):
-    token = get_access_token()
-    site_id = get_site_id(token)
-
-    upload_url = f"{GRAPH_BASE}/sites/{site_id}/drive/items/{UPLOAD_FOLDER_ID}:/{filename}:/content"
+def upload_file(filename, token):
+    url = f"https://graph.microsoft.com/v1.0/sites/{SITE_ID}/drives/{DRIVE_ID}/items/{OUTPUT_FOLDER_ID}:/children"
     headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
     }
-    r = requests.put(upload_url, headers=headers, data=file_stream.getvalue())
-    r.raise_for_status()
-    return r.json()
+    upload_url = f"{url}/{filename}:/content"
+    with open(filename, "rb") as f:
+        response = requests.put(upload_url, headers={"Authorization": f"Bearer {token}"}, data=f)
+    response.raise_for_status()
+    print(f"Uploaded file to output folder: {filename}")
+
+if __name__ == "__main__":
+    token = get_access_token()
+    latest_csv = list_recent_csv_file(token)
+    if latest_csv:
+        local_file = download_file(latest_csv, token)
+        output_file = process_csv(local_file)
+        upload_file(output_file, token)
