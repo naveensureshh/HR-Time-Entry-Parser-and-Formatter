@@ -2,7 +2,7 @@ name: HR Timesheet Automation
 
 on:
   schedule:
-    - cron: '0 15 * * *'  # 🔁 Runs every day at 10:00 AM EST
+    - cron: '0 15 * * *'  # 🔁 Runs every day at 11:00 AM EDT / 10:00 AM EST
   workflow_dispatch:       # 🖱️ Manual trigger from GitHub UI
 
 jobs:
