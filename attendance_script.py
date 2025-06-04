@@ -1,6 +1,7 @@
 import os
 import requests
 import time
+import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -46,6 +47,19 @@ def download_file(item, token):
     print(f"Downloaded: {filename}")
     return filename
 
+def validate_timesheet_csv(file_path):
+    try:
+        df = pd.read_csv(file_path)
+        required_columns = {"Employee ID", "Clock In", "Clock Out"}
+        if required_columns.issubset(set(df.columns)):
+            return True
+        else:
+            print(f"❌ CSV file missing required columns: {file_path}")
+            return False
+    except Exception as e:
+        print(f"❌ Error reading CSV file: {file_path}, {e}")
+        return False
+
 def process_csv(input_filename):
     output_filename = f"processed_{input_filename}"
     with open(input_filename, "r") as infile, open(output_filename, "w") as outfile:
@@ -64,12 +78,15 @@ def upload_file(filename, token):
     with open(filename, "rb") as f:
         response = requests.put(upload_url, headers={"Authorization": f"Bearer {token}"}, data=f)
     response.raise_for_status()
-    print(f"Uploaded file to output folder: {filename}")
+    print(f"✅ Uploaded file to output folder: {filename}")
 
 if __name__ == "__main__":
     token = get_access_token()
     latest_csv = list_recent_csv_file(token)
     if latest_csv:
         local_file = download_file(latest_csv, token)
-        output_file = process_csv(local_file)
-        upload_file(output_file, token)
+        if validate_timesheet_csv(local_file):
+            output_file = process_csv(local_file)
+            upload_file(output_file, token)
+        else:
+            print("❌ File validation failed. Skipping processing and upload.")
