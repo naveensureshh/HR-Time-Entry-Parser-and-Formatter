@@ -39,6 +39,7 @@ def list_files(folder_id):
 def download_file(item_id, filename):
     url = f"{GRAPH_BASE_URL}/drives/{drive_id}/items/{item_id}/content"
     response = requests.get(url, headers=headers)
+    response.raise_for_status()
     with open(filename, "wb") as f:
         f.write(response.content)
 
