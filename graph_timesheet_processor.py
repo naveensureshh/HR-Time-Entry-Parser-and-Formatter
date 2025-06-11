@@ -5,9 +5,10 @@ from msal import ConfidentialClientApplication
 
 # === AUTH SETUP ===
 CLIENT_ID = os.environ["GRAPH_CLIENT_ID"]
-TENANT_ID = os.environ["GRAPH_TENANT_ID"]
 CLIENT_SECRET = os.environ["GRAPH_CLIENT_SECRET"]
-AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
+
+# ✅ Hardcoded AUTHORITY to correct tenant
+AUTHORITY = "https://login.microsoftonline.com/dac8e04e-cbbe-4a50-b211-08647f9e8839"
 SCOPE = ["https://graph.microsoft.com/.default"]
 GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 
@@ -23,7 +24,8 @@ app = ConfidentialClientApplication(
     client_credential=CLIENT_SECRET
 )
 token_response = app.acquire_token_for_client(scopes=SCOPE)
-print(token_response)
+print(token_response)  # For debugging only; remove in production
+
 access_token = token_response["access_token"]
 headers = {"Authorization": f"Bearer {access_token}"}
 
