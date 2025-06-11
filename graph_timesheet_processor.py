@@ -23,6 +23,7 @@ app = ConfidentialClientApplication(
     client_credential=CLIENT_SECRET
 )
 token_response = app.acquire_token_for_client(scopes=SCOPE)
+print(token_response)
 access_token = token_response["access_token"]
 headers = {"Authorization": f"Bearer {access_token}"}
 
